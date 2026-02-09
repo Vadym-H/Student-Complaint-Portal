@@ -1,4 +1,4 @@
-package services
+package cosmos
 
 import (
 	"context"
@@ -9,35 +9,8 @@ import (
 	"github.com/google/uuid"
 )
 
-type CosmosService struct {
-	client              *azcosmos.Client
-	database            string
-	usersContainer      string
-	complaintsContainer string
-}
-
-// NewCosmosService creates a new CosmosService with the given endpoint, key, and database
-func NewCosmosService(endpoint, key, database string) (*CosmosService, error) {
-	cred, err := azcosmos.NewKeyCredential(key)
-	if err != nil {
-		return nil, err
-	}
-
-	client, err := azcosmos.NewClientWithKey(endpoint, cred, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return &CosmosService{
-		client:              client,
-		database:            database,
-		usersContainer:      "users",
-		complaintsContainer: "complaints",
-	}, nil
-}
-
 // CreateUser inserts a user into the users container
-func (s *CosmosService) CreateUser(ctx context.Context, user *models.User) error {
+func (s *Service) CreateUser(ctx context.Context, user *models.User) error {
 	// Auto-generate ID if not provided
 	if user.ID == "" {
 		user.ID = uuid.New().String()
@@ -59,7 +32,7 @@ func (s *CosmosService) CreateUser(ctx context.Context, user *models.User) error
 }
 
 // GetUserByEmail retrieves a user from the users container by email
-func (s *CosmosService) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
+func (s *Service) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
 
 	containerClient, err := s.client.NewContainer(s.database, s.usersContainer)
 	if err != nil {
@@ -100,4 +73,25 @@ func (s *CosmosService) GetUserByEmail(ctx context.Context, email string) (*mode
 	}
 
 	return nil, nil // not found
+}
+
+// GetUserByID retrieves a user from the users container by ID
+func (s *Service) GetUserByID(ctx context.Context, id string) (*models.User, error) {
+	containerClient, err := s.client.NewContainer(s.database, s.usersContainer)
+	if err != nil {
+		return nil, err
+	}
+
+	partitionKey := azcosmos.NewPartitionKeyString(id)
+	response, err := containerClient.ReadItem(ctx, partitionKey, id, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var user models.User
+	if err := json.Unmarshal(response.Value, &user); err != nil {
+		return nil, err
+	}
+
+	return &user, nil
 }
