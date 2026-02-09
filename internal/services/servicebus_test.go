@@ -1,12 +1,14 @@
 package services
 
 import (
+	"log/slog"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestNewServiceBusService(t *testing.T) {
+	log := slog.Default()
 	tests := []struct {
 		name             string
 		connectionString string
@@ -26,7 +28,7 @@ func TestNewServiceBusService(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			service, err := NewServiceBusService(tt.connectionString)
+			service, err := NewServiceBusService(tt.connectionString, log)
 
 			if tt.expectError {
 				assert.Error(t, err)

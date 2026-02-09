@@ -7,9 +7,11 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/data/azcosmos"
 )
 
-// ErrInvalidRole Error constants
+// Error constants
 var (
-	ErrInvalidRole = errors.New("invalid user role")
+	ErrInvalidRole           = errors.New("invalid user role")
+	ErrEmailAlreadyExists    = errors.New("user with this email already exists")
+	ErrUsernameAlreadyExists = errors.New("user with this username already exists")
 )
 
 type Service struct {
