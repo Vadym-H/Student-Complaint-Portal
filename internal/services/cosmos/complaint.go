@@ -3,6 +3,7 @@ package cosmos
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/data/azcosmos"
 	"github.com/Vadym-H/Student-Complaint-Portal/internal/models"
@@ -36,6 +37,7 @@ func (s *Service) CreateComplaint(ctx context.Context, complaint *models.Complai
 func (s *Service) GetComplaints(ctx context.Context, userId, status string) ([]models.Complaint, error) {
 	containerClient, err := s.client.NewContainer(s.database, s.complaintsContainer)
 	if err != nil {
+		s.log.Error("failed to get complaints container", slog.String("error", err.Error()))
 		return nil, err
 	}
 
@@ -69,18 +71,21 @@ func (s *Service) GetComplaints(ctx context.Context, userId, status string) ([]m
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
+			s.log.Error("failed to query complaints", slog.String("userId", userId), slog.String("status", status), slog.String("error", err.Error()))
 			return nil, err
 		}
 
 		for _, item := range page.Items {
 			var complaint models.Complaint
 			if err := json.Unmarshal(item, &complaint); err != nil {
+				s.log.Error("failed to unmarshal complaint", slog.String("error", err.Error()))
 				return nil, err
 			}
 			complaints = append(complaints, complaint)
 		}
 	}
 
+	s.log.Debug("complaints retrieved", slog.String("userId", userId), slog.String("status", status), slog.Int("count", len(complaints)))
 	return complaints, nil
 }
 
@@ -88,6 +93,7 @@ func (s *Service) GetComplaints(ctx context.Context, userId, status string) ([]m
 func (s *Service) UpdateComplaintStatus(ctx context.Context, id, status string) error {
 	containerClient, err := s.client.NewContainer(s.database, s.complaintsContainer)
 	if err != nil {
+		s.log.Error("failed to get complaints container", slog.String("error", err.Error()))
 		return err
 	}
 
@@ -105,12 +111,14 @@ func (s *Service) UpdateComplaintStatus(ctx context.Context, id, status string) 
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
+			s.log.Error("failed to query complaint for update", slog.String("complaintId", id), slog.String("error", err.Error()))
 			return err
 		}
 
 		for _, item := range page.Items {
 			var c models.Complaint
 			if err := json.Unmarshal(item, &c); err != nil {
+				s.log.Error("failed to unmarshal complaint", slog.String("complaintId", id), slog.String("error", err.Error()))
 				return err
 			}
 			complaint = &c
@@ -122,20 +130,29 @@ func (s *Service) UpdateComplaintStatus(ctx context.Context, id, status string) 
 	}
 
 	if complaint == nil {
+		s.log.Debug("complaint not found for update", slog.String("complaintId", id))
 		return nil // complaint not found
 	}
 
 	// Update the status
+	oldStatus := complaint.Status
 	complaint.Status = status
 
 	// Marshal the updated complaint
 	complaintBytes, err := json.Marshal(complaint)
 	if err != nil {
+		s.log.Error("failed to marshal updated complaint", slog.String("complaintId", id), slog.String("error", err.Error()))
 		return err
 	}
 
 	// Replace the item using the partition key
 	partitionKey := azcosmos.NewPartitionKeyString(complaint.UserID)
 	_, err = containerClient.ReplaceItem(ctx, partitionKey, id, complaintBytes, nil)
-	return err
+	if err != nil {
+		s.log.Error("failed to update complaint status in cosmos", slog.String("complaintId", id), slog.String("error", err.Error()))
+		return err
+	}
+
+	s.log.Info("complaint status updated", slog.String("complaintId", id), slog.String("oldStatus", oldStatus), slog.String("newStatus", status))
+	return nil
 }

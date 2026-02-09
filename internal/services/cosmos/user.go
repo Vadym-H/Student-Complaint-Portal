@@ -3,6 +3,7 @@ package cosmos
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/data/azcosmos"
 	"github.com/Vadym-H/Student-Complaint-Portal/internal/models"
@@ -14,6 +15,12 @@ func (s *Service) CreateUser(ctx context.Context, user *models.User) error {
 	// Auto-generate ID if not provided
 	if user.ID == "" {
 		user.ID = uuid.New().String()
+	}
+
+	// Validate role
+	if user.Role != models.RoleAdmin && user.Role != models.RoleStudent {
+		s.log.Error("invalid user role", slog.String("role", user.Role))
+		return ErrInvalidRole
 	}
 
 	containerClient, err := s.client.NewContainer(s.database, s.usersContainer)
@@ -52,7 +59,7 @@ func (s *Service) GetUserByEmail(ctx context.Context, email string) (*models.Use
 
 	pager := containerClient.NewQueryItemsPager(
 		query,
-		azcosmos.PartitionKey{}, // ✅ cross-partition
+		azcosmos.PartitionKey{}, // cross-partition
 		queryOptions,
 	)
 
@@ -79,19 +86,23 @@ func (s *Service) GetUserByEmail(ctx context.Context, email string) (*models.Use
 func (s *Service) GetUserByID(ctx context.Context, id string) (*models.User, error) {
 	containerClient, err := s.client.NewContainer(s.database, s.usersContainer)
 	if err != nil {
+		s.log.Error("failed to get users container", slog.String("error", err.Error()))
 		return nil, err
 	}
 
 	partitionKey := azcosmos.NewPartitionKeyString(id)
 	response, err := containerClient.ReadItem(ctx, partitionKey, id, nil)
 	if err != nil {
+		s.log.Error("failed to read user by ID", slog.String("userId", id), slog.String("error", err.Error()))
 		return nil, err
 	}
 
 	var user models.User
 	if err := json.Unmarshal(response.Value, &user); err != nil {
+		s.log.Error("failed to unmarshal user", slog.String("userId", id), slog.String("error", err.Error()))
 		return nil, err
 	}
 
+	s.log.Debug("user found by ID", slog.String("userId", id))
 	return &user, nil
 }

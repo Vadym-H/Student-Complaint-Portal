@@ -1,7 +1,15 @@
 package cosmos
 
 import (
+	"errors"
+	"log/slog"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/data/azcosmos"
+)
+
+// ErrInvalidRole Error constants
+var (
+	ErrInvalidRole = errors.New("invalid user role")
 )
 
 type Service struct {
@@ -9,10 +17,15 @@ type Service struct {
 	database            string
 	usersContainer      string
 	complaintsContainer string
+	log                 *slog.Logger
 }
 
 // NewCosmosService creates a new CosmosService with the given endpoint, key, and database
-func NewCosmosService(endpoint, key, database string) (*Service, error) {
+func NewCosmosService(endpoint, key, database string, log *slog.Logger) (*Service, error) {
+	const module = "cosmos"
+	log = log.With(
+		slog.String("module", module),
+	)
 	cred, err := azcosmos.NewKeyCredential(key)
 	if err != nil {
 		return nil, err
@@ -23,15 +36,18 @@ func NewCosmosService(endpoint, key, database string) (*Service, error) {
 		return nil, err
 	}
 
+	log.Info("cosmos DB service initialized", slog.String("database", database))
+
 	return &Service{
 		client:              client,
 		database:            database,
 		usersContainer:      "users",
 		complaintsContainer: "complaints",
+		log:                 log,
 	}, nil
 }
 
-// For testing only
+// PublicServiceTest For testing only
 type PublicServiceTest struct {
 	Client              *azcosmos.Client
 	Database            string

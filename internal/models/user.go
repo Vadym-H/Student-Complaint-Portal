@@ -9,3 +9,8 @@ type User struct {
 	Role         string    `json:"role"` // "student" or "admin"
 	CreatedAt    time.Time `json:"createdAt"`
 }
+
+const (
+	RoleStudent string = "student"
+	RoleAdmin   string = "admin"
+)
