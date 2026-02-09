@@ -30,3 +30,30 @@ func NewCosmosService(endpoint, key, database string) (*Service, error) {
 		complaintsContainer: "complaints",
 	}, nil
 }
+
+// For testing only
+type PublicServiceTest struct {
+	Client              *azcosmos.Client
+	Database            string
+	UsersContainer      string
+	ComplaintsContainer string
+}
+
+func NewCosmosServiceTest(endpoint, key, database string) (*PublicServiceTest, error) {
+	cred, err := azcosmos.NewKeyCredential(key)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := azcosmos.NewClientWithKey(endpoint, cred, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return &PublicServiceTest{
+		Client:              client,
+		Database:            database,
+		UsersContainer:      "users",
+		ComplaintsContainer: "complaints",
+	}, nil
+}

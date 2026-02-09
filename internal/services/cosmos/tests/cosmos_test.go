@@ -1,4 +1,4 @@
-package tests
+package cosmos
 
 import (
 	"testing"
@@ -33,7 +33,7 @@ func TestNewCosmosService(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			service, err := cosmos.NewCosmosService(tt.endpoint, tt.key, tt.database)
+			service, err := cosmos.NewCosmosServiceTest(tt.endpoint, tt.key, tt.database)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -41,10 +41,10 @@ func TestNewCosmosService(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 				assert.NotNil(t, service)
-				assert.NotNil(t, service.client)
-				assert.Equal(t, tt.database, service.database)
-				assert.Equal(t, "users", service.usersContainer)
-				assert.Equal(t, "complaints", service.complaintsContainer)
+				assert.NotNil(t, service.Client)
+				assert.Equal(t, tt.database, service.Database)
+				assert.Equal(t, "users", service.UsersContainer)
+				assert.Equal(t, "complaints", service.ComplaintsContainer)
 			}
 		})
 	}
