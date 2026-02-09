@@ -36,14 +36,18 @@ func NewAuthHandler(cosmosService *cosmos.Service, jwtSecret string, log *slog.L
 // RegisterRequest represents the registration request body
 type RegisterRequest struct {
 	Email    string `json:"email"`
+	UserName string `json:"username"`
+	Name     string `json:"name"`
 	Password string `json:"password"`
 }
 
 // RegisterResponse represents the registration response
 type RegisterResponse struct {
-	ID    string `json:"id"`
-	Email string `json:"email"`
-	Token string `json:"token"`
+	ID       string `json:"id"`
+	Email    string `json:"email"`
+	UserName string `json:"username"`
+	Name     string `json:"name"`
+	Token    string `json:"token"`
 }
 
 // Register handles user registration
@@ -56,25 +60,41 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate required fields
-	if req.Email == "" || req.Password == "" {
-		http.Error(w, "Email and password are required", http.StatusBadRequest)
+	if req.Email == "" || req.Password == "" || req.UserName == "" || req.Name == "" {
+		http.Error(w, "Email, username, name, and password are required", http.StatusBadRequest)
 		return
 	}
 
-	// Check if user already exists
+	// Check if user with this email already exists
 	existingUser, err := h.cosmosService.GetUserByEmail(r.Context(), req.Email)
 	if err != nil {
+		h.log.Error("failed to check existing user by email", slog.String("email", req.Email), slog.String("error", err.Error()))
 		http.Error(w, "Failed to check existing user", http.StatusInternalServerError)
 		return
 	}
 	if existingUser != nil {
-		http.Error(w, "User with this email already exists", http.StatusConflict)
+		h.log.Debug("registration attempt with existing email", slog.String("email", req.Email))
+		http.Error(w, cosmos.ErrEmailAlreadyExists.Error(), http.StatusConflict)
+		return
+	}
+
+	// Check if user with this username already exists
+	existingUserByUsername, err := h.cosmosService.GetUserByUsername(r.Context(), req.UserName)
+	if err != nil {
+		h.log.Error("failed to check existing user by username", slog.String("username", req.UserName), slog.String("error", err.Error()))
+		http.Error(w, "Failed to check existing user", http.StatusInternalServerError)
+		return
+	}
+	if existingUserByUsername != nil {
+		h.log.Debug("registration attempt with existing username", slog.String("username", req.UserName))
+		http.Error(w, cosmos.ErrUsernameAlreadyExists.Error(), http.StatusConflict)
 		return
 	}
 
 	// Hash password with bcrypt
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
+		h.log.Error("failed to hash password", slog.String("error", err.Error()))
 		http.Error(w, "Failed to hash password", http.StatusInternalServerError)
 		return
 	}
@@ -83,6 +103,8 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	user := &models.User{
 		ID:           uuid.New().String(),
 		Email:        req.Email,
+		UserName:     req.UserName,
+		Name:         req.Name,
 		PasswordHash: string(hashedPassword),
 		Role:         "student",
 		CreatedAt:    time.Now(),
@@ -90,6 +112,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	// Save user to database
 	if err := h.cosmosService.CreateUser(r.Context(), user); err != nil {
+		h.log.Error("failed to create user", slog.String("userId", user.ID), slog.String("error", err.Error()))
 		http.Error(w, "Failed to create user", http.StatusInternalServerError)
 		return
 	}
@@ -97,22 +120,27 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	// Generate JWT token
 	token, err := middleware.GenerateJWT(user.ID, user.Email, user.Role, h.jwtSecret)
 	if err != nil {
+		h.log.Error("failed to generate JWT token", slog.String("userId", user.ID), slog.String("error", err.Error()))
 		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
 		return
 	}
 
 	// Return response
 	response := RegisterResponse{
-		ID:    user.ID,
-		Email: user.Email,
-		Token: token,
+		ID:       user.ID,
+		Email:    user.Email,
+		UserName: user.UserName,
+		Name:     user.Name,
+		Token:    token,
 	}
+
+	h.log.Info("user registered successfully", slog.String("userId", user.ID), slog.String("email", user.Email), slog.String("username", user.UserName))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	err = json.NewEncoder(w).Encode(response)
 	if err != nil {
-		h.log.Error("failed to encode response")
+		h.log.Error("failed to encode response", slog.String("userId", user.ID), slog.String("error", err.Error()))
 		return
 	}
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	"github.com/Vadym-H/Student-Complaint-Portal/internal/middleware"
 	"github.com/Vadym-H/Student-Complaint-Portal/internal/services"
 	"github.com/Vadym-H/Student-Complaint-Portal/internal/services/cosmos"
+	"github.com/Vadym-H/Student-Complaint-Portal/internal/swagger"
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 )
@@ -47,6 +49,7 @@ func main() {
 
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(cosmosService, cfg.JWTSecret, log)
+	complaintHandler := handlers.NewComplaintsHandler(cosmosService, serviceBusService, log)
 
 	// Setup router
 	r := chi.NewRouter()
@@ -58,6 +61,9 @@ func main() {
 	r.Use(chimiddleware.Recoverer)
 	r.Use(chimiddleware.Timeout(60 * time.Second))
 
+	// Setup Swagger
+	swagger.SetupSwagger(r)
+
 	// Public routes
 	r.Post("/api/auth/register", authHandler.Register)
 	r.Post("/api/auth/login", authHandler.Login)
@@ -68,21 +74,17 @@ func main() {
 		r.Use(middleware.RequireAuth(cfg.JWTSecret, log))
 
 		// Health check endpoint (private)
-		r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("OK"))
-		})
+		r.Get("/health", swagger.HealthCheck)
 
-		// TODO: Add complaint routes here
-		// r.Get("/api/complaints", complaintHandler.GetComplaints)
-		// r.Post("/api/complaints", complaintHandler.CreateComplaint)
+		// Complaint routes
+		r.Post("/api/complaints", complaintHandler.CreateComplaint)
+		r.Get("/api/complaints", complaintHandler.GetComplaints)
 
 		// Admin-only routes
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAdmin(log))
 
-			// TODO: Add admin routes here
-			// r.Patch("/api/complaints/{id}/status", complaintHandler.UpdateComplaintStatus)
+			r.Put("/api/complaints/{id}", complaintHandler.UpdateComplaint)
 		})
 	})
 
@@ -98,7 +100,7 @@ func main() {
 	// Start server in a goroutine
 	go func() {
 		log.Info("HTTP server starting", slog.String("addr", srv.Addr))
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(http.ErrServerClosed, err) {
 			log.Error("HTTP server failed", slog.String("error", err.Error()))
 			os.Exit(1)
 		}
@@ -119,7 +121,4 @@ func main() {
 	}
 
 	log.Info("server stopped gracefully")
-
-	// Suppress unused variable warnings
-	_ = serviceBusService
 }

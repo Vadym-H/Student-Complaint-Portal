@@ -156,3 +156,42 @@ func (s *Service) UpdateComplaintStatus(ctx context.Context, id, status string) 
 	s.log.Info("complaint status updated", slog.String("complaintId", id), slog.String("oldStatus", oldStatus), slog.String("newStatus", status))
 	return nil
 }
+
+// GetComplaintByID retrieves a single complaint by its ID
+func (s *Service) GetComplaintByID(ctx context.Context, id string) (*models.Complaint, error) {
+	containerClient, err := s.client.NewContainer(s.database, s.complaintsContainer)
+	if err != nil {
+		s.log.Error("failed to get complaints container", slog.String("error", err.Error()))
+		return nil, err
+	}
+
+	query := "SELECT * FROM c WHERE c.id = @id"
+	queryOptions := &azcosmos.QueryOptions{
+		QueryParameters: []azcosmos.QueryParameter{
+			{Name: "@id", Value: id},
+		},
+	}
+
+	pager := containerClient.NewQueryItemsPager(query, azcosmos.PartitionKey{}, queryOptions)
+
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			s.log.Error("failed to query complaint by ID", slog.String("complaintId", id), slog.String("error", err.Error()))
+			return nil, err
+		}
+
+		for _, item := range page.Items {
+			var complaint models.Complaint
+			if err := json.Unmarshal(item, &complaint); err != nil {
+				s.log.Error("failed to unmarshal complaint", slog.String("complaintId", id), slog.String("error", err.Error()))
+				return nil, err
+			}
+			s.log.Debug("complaint retrieved by ID", slog.String("complaintId", id))
+			return &complaint, nil
+		}
+	}
+
+	s.log.Debug("complaint not found by ID", slog.String("complaintId", id))
+	return nil, nil
+}

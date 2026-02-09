@@ -106,3 +106,47 @@ func (s *Service) GetUserByID(ctx context.Context, id string) (*models.User, err
 	s.log.Debug("user found by ID", slog.String("userId", id))
 	return &user, nil
 }
+
+// GetUserByUsername retrieves a user from the users container by username
+func (s *Service) GetUserByUsername(ctx context.Context, username string) (*models.User, error) {
+
+	containerClient, err := s.client.NewContainer(s.database, s.usersContainer)
+	if err != nil {
+		return nil, err
+	}
+
+	query := "SELECT * FROM c WHERE c.username = @username"
+
+	queryOptions := &azcosmos.QueryOptions{
+		QueryParameters: []azcosmos.QueryParameter{
+			{
+				Name:  "@username",
+				Value: username,
+			},
+		},
+	}
+
+	pager := containerClient.NewQueryItemsPager(
+		query,
+		azcosmos.PartitionKey{}, // cross-partition
+		queryOptions,
+	)
+
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, item := range page.Items {
+			var user models.User
+			if err := json.Unmarshal(item, &user); err != nil {
+				return nil, err
+			}
+
+			return &user, nil
+		}
+	}
+
+	return nil, nil // not found
+}
