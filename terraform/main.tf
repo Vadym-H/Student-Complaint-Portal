@@ -86,3 +86,41 @@ resource "azurerm_cosmosdb_sql_container" "complaints" {
   database_name       = azurerm_cosmosdb_sql_database.main.name
   partition_key_paths = ["/userId"]
 }
+
+# Service Bus Namespace
+resource "azurerm_servicebus_namespace" "main" {
+  name                = "${var.project_name}-bus-${random_string.suffix.result}"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+  sku                 = "Basic"  # Cheapest tier, perfect for your needs
+
+  tags = {
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  }
+}
+
+# Queue 1: For new complaints
+resource "azurerm_servicebus_queue" "new_complaints" {
+  name         = "new-complaints"
+  namespace_id = azurerm_servicebus_namespace.main.id
+
+  # Messages stay in queue for 14 days if not processed
+  default_message_ttl = "P14D"
+
+  # Dead letter queue enabled (for failed messages)
+  dead_lettering_on_message_expiration = true
+
+  # Max size: 1GB
+  max_size_in_megabytes = 1024
+}
+
+# Queue 2: For complaint status changes
+resource "azurerm_servicebus_queue" "status_changed" {
+  name         = "complaint-status-changed"
+  namespace_id = azurerm_servicebus_namespace.main.id
+
+  default_message_ttl                  = "P14D"
+  dead_lettering_on_message_expiration = true
+  max_size_in_megabytes                = 1024
+}
