@@ -1,0 +1,103 @@
+package services
+
+import (
+	"context"
+	"encoding/json"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/data/azcosmos"
+	"github.com/Vadym-H/Student-Complaint-Portal/internal/models"
+	"github.com/google/uuid"
+)
+
+type CosmosService struct {
+	client              *azcosmos.Client
+	database            string
+	usersContainer      string
+	complaintsContainer string
+}
+
+// NewCosmosService creates a new CosmosService with the given endpoint, key, and database
+func NewCosmosService(endpoint, key, database string) (*CosmosService, error) {
+	cred, err := azcosmos.NewKeyCredential(key)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := azcosmos.NewClientWithKey(endpoint, cred, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return &CosmosService{
+		client:              client,
+		database:            database,
+		usersContainer:      "users",
+		complaintsContainer: "complaints",
+	}, nil
+}
+
+// CreateUser inserts a user into the users container
+func (s *CosmosService) CreateUser(ctx context.Context, user *models.User) error {
+	// Auto-generate ID if not provided
+	if user.ID == "" {
+		user.ID = uuid.New().String()
+	}
+
+	containerClient, err := s.client.NewContainer(s.database, s.usersContainer)
+	if err != nil {
+		return err
+	}
+
+	userBytes, err := json.Marshal(user)
+	if err != nil {
+		return err
+	}
+
+	partitionKey := azcosmos.NewPartitionKeyString(user.ID)
+	_, err = containerClient.CreateItem(ctx, partitionKey, userBytes, nil)
+	return err
+}
+
+// GetUserByEmail retrieves a user from the users container by email
+func (s *CosmosService) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
+
+	containerClient, err := s.client.NewContainer(s.database, s.usersContainer)
+	if err != nil {
+		return nil, err
+	}
+
+	query := "SELECT * FROM c WHERE c.email = @email"
+
+	queryOptions := &azcosmos.QueryOptions{
+		QueryParameters: []azcosmos.QueryParameter{
+			{
+				Name:  "@email",
+				Value: email,
+			},
+		},
+	}
+
+	pager := containerClient.NewQueryItemsPager(
+		query,
+		azcosmos.PartitionKey{}, // ✅ cross-partition
+		queryOptions,
+	)
+
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, item := range page.Items {
+			var user models.User
+			if err := json.Unmarshal(item, &user); err != nil {
+				return nil, err
+			}
+
+			return &user, nil
+		}
+	}
+
+	return nil, nil // not found
+}

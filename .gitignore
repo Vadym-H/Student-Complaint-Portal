@@ -1,0 +1,62 @@
+# Environment variables - NEVER COMMIT THESE!
+.env
+.env.local
+.env.*.local
+
+# IDE and Editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Go build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+dist/
+build/
+
+# Go test files
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Go vendor directory
+vendor/
+
+# Terraform sensitive files - NEVER COMMIT THESE!
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/*.tfstate.backup
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+*.tfvars
+!terraform/terraform.tfvars.example
+
+# Terraform crash logs
+crash.log
+crash.*.log
+
+# Azure and cloud provider files
+*.azureauth
+*.publishsettings
+
+# Logs
+*.log
+logs/
+tmp/
+temp/
+
+# Dependency directories
+node_modules/
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
