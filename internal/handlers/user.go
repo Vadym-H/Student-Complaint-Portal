@@ -33,6 +33,7 @@ type UserInfoResponse struct {
 	Email    string `json:"email"`
 	Name     string `json:"name"`
 	UserName string `json:"username"`
+	Role     string `json:"role"`
 }
 
 // GetUserInfo handles GET requests to retrieve the current user's information
@@ -74,6 +75,7 @@ func (h *UserHandler) GetUserInfo(w http.ResponseWriter, r *http.Request) {
 		Email:    user.Email,
 		Name:     user.Name,
 		UserName: user.UserName,
+		Role:     user.Role,
 	}
 
 	// Write response
