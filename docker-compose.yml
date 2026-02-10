@@ -9,7 +9,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./.env:/app/.env:ro  # ← ADD THIS LINE - Mounts .env into container
+      - ./.env:/app/.env:ro
     environment:
       - ENV=development
     restart: unless-stopped

@@ -1,4 +1,6 @@
-
+.env
+.env.local
+.env.*.local
 # IDE and Editor files
 .idea/
 .vscode/
@@ -56,4 +58,3 @@ node_modules/
 Thumbs.db
 ehthumbs.db
 Desktop.ini
-.env

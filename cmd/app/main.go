@@ -50,6 +50,7 @@ func main() {
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(cosmosService, cfg.JWTSecret, log)
 	complaintHandler := handlers.NewComplaintsHandler(cosmosService, serviceBusService, log)
+	userHandler := handlers.NewUserHandler(cosmosService, log)
 
 	// Setup router
 	r := chi.NewRouter()
@@ -78,6 +79,9 @@ func main() {
 	// Protected routes (require authentication)
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireAuth(cfg.JWTSecret, log))
+
+		// User routes
+		r.Get("/api/users/me", userHandler.GetUserInfo)
 
 		// Complaint routes
 		r.Post("/api/complaints", complaintHandler.CreateComplaint)
