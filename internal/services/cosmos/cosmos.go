@@ -12,6 +12,8 @@ var (
 	ErrInvalidRole           = errors.New("invalid user role")
 	ErrEmailAlreadyExists    = errors.New("user with this email already exists")
 	ErrUsernameAlreadyExists = errors.New("user with this username already exists")
+	ErrUserNotFound          = errors.New("user not found")
+	ErrComplaintNotFound     = errors.New("complaint not found")
 )
 
 type Service struct {

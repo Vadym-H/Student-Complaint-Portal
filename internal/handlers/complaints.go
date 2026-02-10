@@ -122,7 +122,7 @@ func (h *ComplaintsHandler) GetComplaints(w http.ResponseWriter, r *http.Request
 		http.Error(w, "Failed to retrieve complaints", http.StatusInternalServerError)
 		return
 	}
-	
+
 	h.log.Info("complaints retrieved for user", slog.String("userId", userId), slog.String("status", status), slog.Int("count", len(complaints)))
 
 	// Return complaints as JSON
@@ -264,5 +264,88 @@ func (h *ComplaintsHandler) GetAllComplaintsAdmin(w http.ResponseWriter, r *http
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(complaints); err != nil {
 		h.log.Error("failed to encode response", slog.String("adminId", adminId), slog.String("error", err.Error()))
+	}
+}
+
+// DeleteComplaint handles DELETE requests to delete a complaint
+// Students can only delete their own complaints, admins can delete any complaint
+// @Summary Delete a complaint
+// @Description Delete a complaint by ID. Students can only delete their own complaints, admins can delete any
+// @Tags complaints
+// @Security Bearer
+// @Produce json
+// @Param id path string true "Complaint ID"
+// @Success 200 {object} map[string]string
+// @Failure 400 {string} string "Bad Request"
+// @Failure 401 {string} string "Unauthorized"
+// @Failure 403 {string} string "Forbidden"
+// @Failure 404 {string} string "Complaint Not Found"
+// @Failure 500 {string} string "Internal Server Error"
+// @Router /api/complaints/{id} [delete]
+func (h *ComplaintsHandler) DeleteComplaint(w http.ResponseWriter, r *http.Request) {
+	// Get userId from context (set by auth middleware)
+	userId, ok := middleware.GetUserID(r.Context())
+	if !ok {
+		h.log.Error("failed to get userId from context", slog.String("path", r.URL.Path))
+		http.Error(w, "User ID not found in context", http.StatusUnauthorized)
+		return
+	}
+
+	// Get role from context
+	role, ok := middleware.GetRole(r.Context())
+	if !ok {
+		h.log.Error("failed to get role from context", slog.String("userId", userId), slog.String("path", r.URL.Path))
+		http.Error(w, "Role not found in context", http.StatusInternalServerError)
+		return
+	}
+
+	// Get complaint ID from URL parameter
+	complaintId := r.PathValue("id")
+	if complaintId == "" {
+		h.log.Error("complaint id not provided in URL", slog.String("userId", userId))
+		http.Error(w, "Complaint ID required", http.StatusBadRequest)
+		return
+	}
+
+	// Get the complaint to verify ownership (if not admin)
+	complaint, err := h.cosmosService.GetComplaintByID(r.Context(), complaintId)
+	if err != nil {
+		h.log.Error("failed to get complaint for deletion", slog.String("userId", userId), slog.String("complaintId", complaintId), slog.String("error", err.Error()))
+		http.Error(w, "Failed to retrieve complaint", http.StatusInternalServerError)
+		return
+	}
+
+	if complaint == nil {
+		h.log.Debug("complaint not found for deletion", slog.String("userId", userId), slog.String("complaintId", complaintId))
+		http.Error(w, "Complaint not found", http.StatusNotFound)
+		return
+	}
+
+	// Check authorization: student can only delete their own, admin can delete any
+	if role != models.RoleAdmin && complaint.UserID != userId {
+		h.log.Warn("unauthorized deletion attempt", slog.String("userId", userId), slog.String("complaintId", complaintId), slog.String("complaintOwnerId", complaint.UserID))
+		http.Error(w, "Forbidden: you can only delete your own complaints", http.StatusForbidden)
+		return
+	}
+
+	// Delete the complaint
+	if err := h.cosmosService.DeleteComplaint(r.Context(), complaintId); err != nil {
+		h.log.Error("failed to delete complaint", slog.String("userId", userId), slog.String("complaintId", complaintId), slog.String("error", err.Error()))
+		http.Error(w, "Failed to delete complaint", http.StatusInternalServerError)
+		return
+	}
+
+	// Log successful deletion
+	h.log.Info("complaint deleted successfully", slog.String("userId", userId), slog.String("complaintId", complaintId), slog.String("role", role))
+
+	// Return success response
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	response := map[string]string{
+		"message":     "Complaint deleted successfully",
+		"complaintId": complaintId,
+	}
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		h.log.Error("failed to encode response", slog.String("userId", userId), slog.String("complaintId", complaintId), slog.String("error", err.Error()))
 	}
 }

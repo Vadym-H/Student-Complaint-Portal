@@ -82,10 +82,12 @@ func main() {
 
 		// User routes
 		r.Get("/api/users/me", userHandler.GetUserInfo)
+		r.Put("/api/users/me", userHandler.UpdateUserProfile)
 
 		// Complaint routes
 		r.Post("/api/complaints", complaintHandler.CreateComplaint)
 		r.Get("/api/complaints", complaintHandler.GetComplaints)
+		r.Delete("/api/complaints/{id}", complaintHandler.DeleteComplaint)
 
 		// Admin-only routes
 		r.Group(func(r chi.Router) {

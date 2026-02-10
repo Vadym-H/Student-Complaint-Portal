@@ -150,3 +150,61 @@ func (s *Service) GetUserByUsername(ctx context.Context, username string) (*mode
 
 	return nil, nil // not found
 }
+
+// UpdateUser updates user information (name and/or username)
+func (s *Service) UpdateUser(ctx context.Context, userID string, updates map[string]interface{}) (*models.User, error) {
+	containerClient, err := s.client.NewContainer(s.database, s.usersContainer)
+	if err != nil {
+		s.log.Error("failed to get users container", slog.String("error", err.Error()))
+		return nil, err
+	}
+
+	// Get the current user
+	user, err := s.GetUserByID(ctx, userID)
+	if err != nil {
+		s.log.Error("failed to get user for update", slog.String("userId", userID), slog.String("error", err.Error()))
+		return nil, err
+	}
+
+	if user == nil {
+		s.log.Debug("user not found for update", slog.String("userId", userID))
+		return nil, ErrUserNotFound
+	}
+
+	// Apply updates
+	if name, ok := updates["name"].(string); ok && name != "" {
+		user.Name = name
+	}
+
+	if username, ok := updates["username"].(string); ok && username != "" {
+		// Check if new username is already taken by another user
+		existingUser, err := s.GetUserByUsername(ctx, username)
+		if err != nil {
+			s.log.Error("failed to check existing username", slog.String("username", username), slog.String("error", err.Error()))
+			return nil, err
+		}
+		if existingUser != nil && existingUser.ID != userID {
+			s.log.Debug("username already taken", slog.String("username", username))
+			return nil, ErrUsernameAlreadyExists
+		}
+		user.UserName = username
+	}
+
+	// Marshal the updated user
+	userBytes, err := json.Marshal(user)
+	if err != nil {
+		s.log.Error("failed to marshal updated user", slog.String("userId", userID), slog.String("error", err.Error()))
+		return nil, err
+	}
+
+	// Replace the item using the partition key
+	partitionKey := azcosmos.NewPartitionKeyString(userID)
+	_, err = containerClient.ReplaceItem(ctx, partitionKey, userID, userBytes, nil)
+	if err != nil {
+		s.log.Error("failed to update user in cosmos", slog.String("userId", userID), slog.String("error", err.Error()))
+		return nil, err
+	}
+
+	s.log.Info("user updated successfully", slog.String("userId", userID))
+	return user, nil
+}

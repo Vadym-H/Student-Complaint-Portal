@@ -239,3 +239,35 @@ func (s *Service) GetAllComplaints(ctx context.Context, status string) ([]models
 	s.log.Debug("all complaints retrieved", slog.String("status", status), slog.Int("count", len(complaints)))
 	return complaints, nil
 }
+
+// DeleteComplaint deletes a complaint by ID using the partition key
+func (s *Service) DeleteComplaint(ctx context.Context, complaintID string) error {
+	containerClient, err := s.client.NewContainer(s.database, s.complaintsContainer)
+	if err != nil {
+		s.log.Error("failed to get complaints container", slog.String("error", err.Error()))
+		return err
+	}
+
+	// First, find the complaint to get the partition key (userId) and verify it exists
+	complaint, err := s.GetComplaintByID(ctx, complaintID)
+	if err != nil {
+		s.log.Error("failed to get complaint for deletion", slog.String("complaintId", complaintID), slog.String("error", err.Error()))
+		return err
+	}
+
+	if complaint == nil {
+		s.log.Debug("complaint not found for deletion", slog.String("complaintId", complaintID))
+		return ErrComplaintNotFound
+	}
+
+	// Delete the item using the partition key
+	partitionKey := azcosmos.NewPartitionKeyString(complaint.UserID)
+	_, err = containerClient.DeleteItem(ctx, partitionKey, complaintID, nil)
+	if err != nil {
+		s.log.Error("failed to delete complaint from cosmos", slog.String("complaintId", complaintID), slog.String("userId", complaint.UserID), slog.String("error", err.Error()))
+		return err
+	}
+
+	s.log.Info("complaint deleted successfully", slog.String("complaintId", complaintID), slog.String("userId", complaint.UserID))
+	return nil
+}
