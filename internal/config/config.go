@@ -10,6 +10,7 @@ import (
 type Config struct {
 	ENV                  string         `env:"ENV" env-default:"development"`
 	HTTPPort             string         `env:"HTTP_PORT" env-default:"8080"`
+	CORSAllowedOrigins   []string       `env:"CORS_ALLOWED_ORIGINS" env-separator:","`
 	CosmosDB             CosmosDBConfig `env-prefix:"COSMOS_"`
 	ServiceBusConnection string         `env:"SERVICE_BUS_CONNECTION" env-required:"true"`
 	JWTSecret            string         `env:"JWT_SECRET" env-required:"true"`

@@ -56,6 +56,9 @@ func main() {
 
 	// Middleware
 	r.Use(middleware.SecurityHeaders) // Security headers (HSTS, X-Frame-Options, etc.) - must be early
+	if len(cfg.CORSAllowedOrigins) > 0 {
+		r.Use(middleware.CORS(cfg.CORSAllowedOrigins))
+	}
 	r.Use(chimiddleware.RequestID)
 	r.Use(chimiddleware.RealIP)
 	r.Use(chimiddleware.Logger)
