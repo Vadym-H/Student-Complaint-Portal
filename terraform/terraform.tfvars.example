@@ -1,3 +1,24 @@
-environment = "dev"
-location = "Poland Central"
+project_name    = "complaintportal"
+environment     = "dev"  # dev, staging, or prod
+location        = "Poland Central"  # Azure region
 
+# REQUIRED: Provide a secure JWT secret (minimum 32 characters)
+# Generate one securely:
+#   Linux/Mac: openssl rand -hex 32
+#   Windows PowerShell: [System.Convert]::ToBase64String((1..32|%{[byte]Random 255}))
+# OR use a strong password manager
+jwt_secret      = "your-super-secret-key-minimum-32-chars-keep-this-secure-change-it"
+
+# OPTIONAL: Custom domain for the app
+# Leave empty "" to use default *.azurewebsites.net domain
+# If you set this, you must own the domain and configure DNS:
+#   1. Add CNAME: complaints -> <app-name>.azurewebsites.net
+#   2. Add TXT for validation: asuid.complaints -> <validation-id-from-azure>
+custom_domain   = ""
+
+# App Service Plan SKU
+# - B1 (Basic 1) = ~$15/month, 1 vCPU, 1.75 GB RAM - good for dev/small projects
+# - B2 (Basic 2) = ~$30/month, 2 vCPUs, 3.5 GB RAM - good for small production workloads
+# - B3 (Basic 3) = ~$60/month, 4 vCPUs, 7 GB RAM - medium workloads
+# - P1V2 = Premium, more expensive, includes auto-scale
+app_service_sku = "B1"

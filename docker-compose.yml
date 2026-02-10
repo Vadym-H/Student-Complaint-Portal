@@ -1,0 +1,27 @@
+version: '3.9'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    container_name: complaint-portal-app
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./.env:/app/.env:ro  # ← ADD THIS LINE - Mounts .env into container
+    environment:
+      - ENV=development
+    restart: unless-stopped
+    networks:
+      - complaint-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+networks:
+  complaint-network:
+    driver: bridge

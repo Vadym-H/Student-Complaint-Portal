@@ -55,6 +55,7 @@ func main() {
 	r := chi.NewRouter()
 
 	// Middleware
+	r.Use(middleware.SecurityHeaders) // Security headers (HSTS, X-Frame-Options, etc.) - must be early
 	r.Use(chimiddleware.RequestID)
 	r.Use(chimiddleware.RealIP)
 	r.Use(chimiddleware.Logger)
@@ -68,13 +69,12 @@ func main() {
 	r.Post("/api/auth/register", authHandler.Register)
 	r.Post("/api/auth/login", authHandler.Login)
 	r.Post("/api/auth/logout", authHandler.Logout)
+	// Health check endpoint (public)
+	r.Get("/health", swagger.HealthCheck)
 
 	// Protected routes (require authentication)
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireAuth(cfg.JWTSecret, log))
-
-		// Health check endpoint (private)
-		r.Get("/health", swagger.HealthCheck)
 
 		// Complaint routes
 		r.Post("/api/complaints", complaintHandler.CreateComplaint)

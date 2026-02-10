@@ -1,0 +1,76 @@
+# Git
+.git
+.gitignore
+
+# IDE and Editor
+.idea
+.vscode
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Go build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+dist/
+build/
+
+# Go test files
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Go vendor (we use go modules)
+vendor/
+
+# Environment files (MUST NOT include in Docker)
+# Note: .env is NOT ignored - it's copied into the container by Dockerfile.local
+.env.local
+.env.*.local
+
+# Terraform
+terraform/
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+*.tfvars
+!terraform.tfvars.example
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose.yml
+docker-compose.*.yml
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.circleci/
+
+# Documentation
+*.md
+docs/
+
+# Misc
+*.log
+crash.log
+.DS_Store
+node_modules/
+npm-debug.log
+
+# Database files
+*.db
+*.sqlite
+
+# Azure files
+*.azureauth
+*.publishsettings
+

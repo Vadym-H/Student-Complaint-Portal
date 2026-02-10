@@ -1,7 +1,3 @@
-# Environment variables - NEVER COMMIT THESE!
-.env
-.env.local
-.env.*.local
 
 # IDE and Editor files
 .idea/

@@ -39,3 +39,51 @@ output "queue_status_changed" {
   value       = azurerm_servicebus_queue.status_changed.name
   description = "Queue for status changes"
 }
+
+# ============================================================================
+# App Service Outputs
+# ============================================================================
+output "app_service_name" {
+  value       = azurerm_linux_web_app.main.name
+  description = "App Service name (used for monitoring, scaling, etc.)"
+}
+
+output "app_service_default_hostname" {
+  value       = azurerm_linux_web_app.main.default_hostname
+  description = "Default App Service hostname (format: <name>.azurewebsites.net)"
+}
+
+output "app_service_default_url" {
+  value       = "https://${azurerm_linux_web_app.main.default_hostname}"
+  description = "Full HTTPS URL to the application (default hostname)"
+}
+
+output "app_service_custom_domain_url" {
+  value       = var.custom_domain != "" ? "https://${var.custom_domain}" : "N/A (custom domain not configured)"
+  description = "Full HTTPS URL to the application (custom domain if configured)"
+}
+
+# ============================================================================
+# Container Registry Outputs
+# ============================================================================
+output "container_registry_login_server" {
+  value       = azurerm_container_registry.main.login_server
+  description = "Container Registry login server (used to push images)"
+}
+
+output "container_registry_name" {
+  value       = azurerm_container_registry.main.name
+  description = "Container Registry name"
+}
+
+output "container_registry_username" {
+  value       = azurerm_container_registry.main.admin_username
+  description = "Container Registry admin username (for docker login)"
+  sensitive   = false  # Username is not secret, but shown separately
+}
+
+output "container_registry_password" {
+  value       = azurerm_container_registry.main.admin_password
+  description = "Container Registry admin password (KEEP THIS SECRET)"
+  sensitive   = true
+}
