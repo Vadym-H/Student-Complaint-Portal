@@ -91,15 +91,18 @@ func (h *ComplaintsHandler) CreateComplaint(w http.ResponseWriter, r *http.Reque
 
 	// Return created complaint as JSON
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
 	w.WriteHeader(http.StatusCreated)
 	if err := json.NewEncoder(w).Encode(complaint); err != nil {
 		h.log.Error("failed to encode response", slog.String("userId", userId), slog.String("complaintId", complaint.ID), slog.String("error", err.Error()))
 	}
 }
 
-// GetComplaints handles GET requests to retrieve complaints
+// GetComplaints handles GET requests to retrieve complaints for the authenticated user
 func (h *ComplaintsHandler) GetComplaints(w http.ResponseWriter, r *http.Request) {
-	// Get userId and role from context (set by auth middleware)
+	// Get userId from context (set by auth middleware)
 	userId, ok := middleware.GetUserID(r.Context())
 	if !ok {
 		h.log.Error("failed to get userId from context", slog.String("path", r.URL.Path))
@@ -107,67 +110,26 @@ func (h *ComplaintsHandler) GetComplaints(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	role, ok := middleware.GetRole(r.Context())
-	if !ok {
-		h.log.Error("failed to get role from context", slog.String("userId", userId), slog.String("path", r.URL.Path))
-		http.Error(w, "Role not found in context", http.StatusInternalServerError)
-		return
-	}
-
-	// Read query parameters
+	// Read query parameter for status filter
 	status := r.URL.Query().Get("status")
-	id := r.URL.Query().Get("id")
 
-	h.log.Info("getting complaints", slog.String("userId", userId), slog.String("role", role), slog.String("status", status), slog.String("complaintId", id))
+	h.log.Info("getting user complaints", slog.String("userId", userId), slog.String("status", status))
 
-	var complaints []models.Complaint
-	var err error
-
-	if role == models.RoleAdmin {
-		// Admin can view specific complaint by ID or all complaints filtered by status
-		if id != "" {
-			// Return single complaint by ID
-			complaint, err := h.cosmosService.GetComplaintByID(r.Context(), id)
-			if err != nil {
-				h.log.Error("failed to get complaint by ID", slog.String("adminId", userId), slog.String("complaintId", id), slog.String("error", err.Error()))
-				http.Error(w, "Failed to retrieve complaint", http.StatusInternalServerError)
-				return
-			}
-
-			if complaint == nil {
-				h.log.Warn("complaint not found", slog.String("adminId", userId), slog.String("complaintId", id))
-				http.Error(w, "Complaint not found", http.StatusNotFound)
-				return
-			}
-
-			complaints = []models.Complaint{*complaint}
-			h.log.Info("complaint retrieved by ID", slog.String("adminId", userId), slog.String("complaintId", id))
-		} else {
-			// Return all complaints filtered by status (if provided)
-			// For admin viewing all complaints, we need to query without userId filter
-			// This would require a different cosmos query - for now we'll get by status across all
-			h.log.Warn("admin requesting all complaints - this requires cross-partition query", slog.String("adminId", userId))
-			// Note: This would need a separate cosmos method or a cross-partition query
-			// For simplicity, returning empty for now - in production you'd implement this differently
-			complaints = []models.Complaint{}
-		}
-	} else if role == models.RoleStudent {
-		// Student can only view their own complaints, optionally filtered by status
-		complaints, err = h.cosmosService.GetComplaints(r.Context(), userId, status)
-		if err != nil {
-			h.log.Error("failed to get complaints", slog.String("userId", userId), slog.String("status", status), slog.String("error", err.Error()))
-			http.Error(w, "Failed to retrieve complaints", http.StatusInternalServerError)
-			return
-		}
-		h.log.Info("complaints retrieved for student", slog.String("userId", userId), slog.String("status", status), slog.Int("count", len(complaints)))
-	} else {
-		h.log.Error("unknown role", slog.String("userId", userId), slog.String("role", role))
-		http.Error(w, "Unknown role", http.StatusForbidden)
+	// Get complaints for this specific user only, optionally filtered by status
+	complaints, err := h.cosmosService.GetComplaints(r.Context(), userId, status)
+	if err != nil {
+		h.log.Error("failed to get complaints", slog.String("userId", userId), slog.String("status", status), slog.String("error", err.Error()))
+		http.Error(w, "Failed to retrieve complaints", http.StatusInternalServerError)
 		return
 	}
+	
+	h.log.Info("complaints retrieved for user", slog.String("userId", userId), slog.String("status", status), slog.Int("count", len(complaints)))
 
 	// Return complaints as JSON
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(complaints); err != nil {
 		h.log.Error("failed to encode response", slog.String("userId", userId), slog.String("error", err.Error()))
@@ -251,5 +213,56 @@ func (h *ComplaintsHandler) UpdateComplaint(w http.ResponseWriter, r *http.Reque
 	}
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		h.log.Error("failed to encode response", slog.String("adminId", adminId), slog.String("complaintId", complaintId), slog.String("error", err.Error()))
+	}
+}
+
+// GetAllComplaintsAdmin handles GET requests to retrieve all complaints (admin-only)
+// @Summary Get all complaints (admin)
+// @Description Get all complaints, optionally filtered by status
+// @Tags admin
+// @Security Bearer
+// @Produce json
+// @Success 200 {array} models.Complaint
+// @Failure 401 {string} string "Unauthorized"
+// @Failure 403 {string} string "Forbidden"
+// @Failure 500 {string} string "Internal Server Error"
+// @Router /api/admin/complaints [get]
+func (h *ComplaintsHandler) GetAllComplaintsAdmin(w http.ResponseWriter, r *http.Request) {
+	adminId, ok := middleware.GetUserID(r.Context())
+	if !ok {
+		h.log.Error("failed to get userId from context", slog.String("path", r.URL.Path))
+		http.Error(w, "User ID not found in context", http.StatusInternalServerError)
+		return
+	}
+
+	role, ok := middleware.GetRole(r.Context())
+	if !ok {
+		h.log.Error("failed to get role from context", slog.String("adminId", adminId), slog.String("path", r.URL.Path))
+		http.Error(w, "Role not found in context", http.StatusInternalServerError)
+		return
+	}
+	if role != models.RoleAdmin {
+		h.log.Warn("non-admin attempted admin complaints", slog.String("userId", adminId), slog.String("role", role))
+		http.Error(w, "Forbidden: admin access required", http.StatusForbidden)
+		return
+	}
+
+	status := r.URL.Query().Get("status")
+	h.log.Info("admin getting all complaints", slog.String("adminId", adminId), slog.String("status", status))
+
+	complaints, err := h.cosmosService.GetAllComplaints(r.Context(), status)
+	if err != nil {
+		h.log.Error("failed to get all complaints", slog.String("adminId", adminId), slog.String("status", status), slog.String("error", err.Error()))
+		http.Error(w, "Failed to retrieve complaints", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(complaints); err != nil {
+		h.log.Error("failed to encode response", slog.String("adminId", adminId), slog.String("error", err.Error()))
 	}
 }

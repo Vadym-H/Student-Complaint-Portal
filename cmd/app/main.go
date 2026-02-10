@@ -91,6 +91,7 @@ func main() {
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAdmin(log))
 
+			r.Get("/api/admin/complaints", complaintHandler.GetAllComplaintsAdmin)
 			r.Put("/api/complaints/{id}", complaintHandler.UpdateComplaint)
 		})
 	})

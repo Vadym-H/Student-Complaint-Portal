@@ -195,3 +195,47 @@ func (s *Service) GetComplaintByID(ctx context.Context, id string) (*models.Comp
 	s.log.Debug("complaint not found by ID", slog.String("complaintId", id))
 	return nil, nil
 }
+
+// GetAllComplaints retrieves all complaints, optionally filtered by status.
+func (s *Service) GetAllComplaints(ctx context.Context, status string) ([]models.Complaint, error) {
+	containerClient, err := s.client.NewContainer(s.database, s.complaintsContainer)
+	if err != nil {
+		s.log.Error("failed to get complaints container", slog.String("error", err.Error()))
+		return nil, err
+	}
+
+	query := "SELECT * FROM c"
+	var queryOptions *azcosmos.QueryOptions
+	if status != "" {
+		query = "SELECT * FROM c WHERE c.status = @status"
+		queryOptions = &azcosmos.QueryOptions{
+			QueryParameters: []azcosmos.QueryParameter{
+				{Name: "@status", Value: status},
+			},
+		}
+	}
+
+	// Cross-partition query across all users.
+	pager := containerClient.NewQueryItemsPager(query, azcosmos.PartitionKey{}, queryOptions)
+
+	var complaints []models.Complaint
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			s.log.Error("failed to query all complaints", slog.String("status", status), slog.String("error", err.Error()))
+			return nil, err
+		}
+
+		for _, item := range page.Items {
+			var complaint models.Complaint
+			if err := json.Unmarshal(item, &complaint); err != nil {
+				s.log.Error("failed to unmarshal complaint", slog.String("error", err.Error()))
+				return nil, err
+			}
+			complaints = append(complaints, complaint)
+		}
+	}
+
+	s.log.Debug("all complaints retrieved", slog.String("status", status), slog.Int("count", len(complaints)))
+	return complaints, nil
+}
