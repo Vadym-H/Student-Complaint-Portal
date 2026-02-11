@@ -11,6 +11,30 @@ import (
 	"github.com/google/uuid"
 )
 
+// ToComplaintResponse converts a Complaint to ComplaintResponse with user-specific like information
+func ToComplaintResponse(complaint *models.Complaint, currentUserID string) *models.ComplaintResponse {
+	isLiked := false
+	if complaint.Likes != nil {
+		for _, userID := range complaint.Likes {
+			if userID == currentUserID {
+				isLiked = true
+				break
+			}
+		}
+	}
+
+	return &models.ComplaintResponse{
+		ID:          complaint.ID,
+		UserID:      complaint.UserID,
+		Description: complaint.Description,
+		Status:      complaint.Status,
+		Comments:    complaint.Comments,
+		LikeCount:   complaint.LikeCount,
+		IsLiked:     isLiked,
+		CreatedAt:   complaint.CreatedAt,
+	}
+}
+
 // CreateComplaint inserts a complaint into the complaints container
 func (s *Service) CreateComplaint(ctx context.Context, complaint *models.Complaint) error {
 	// Auto-generate ID if not provided
@@ -356,5 +380,114 @@ func (s *Service) DeleteComplaint(ctx context.Context, complaintID string) error
 	}
 
 	s.log.Info("complaint deleted successfully", slog.String("complaintId", complaintID), slog.String("userId", complaint.UserID))
+	return nil
+}
+
+// LikeComplaint adds a user ID to the likes array of a complaint
+func (s *Service) LikeComplaint(ctx context.Context, complaintID, userID string) error {
+	containerClient, err := s.client.NewContainer(s.database, s.complaintsContainer)
+	if err != nil {
+		s.log.Error("failed to get complaints container", slog.String("error", err.Error()))
+		return err
+	}
+
+	// Get the complaint
+	complaint, err := s.GetComplaintByID(ctx, complaintID)
+	if err != nil {
+		s.log.Error("failed to get complaint for liking", slog.String("complaintId", complaintID), slog.String("userId", userID), slog.String("error", err.Error()))
+		return err
+	}
+
+	if complaint == nil {
+		s.log.Debug("complaint not found for liking", slog.String("complaintId", complaintID))
+		return ErrComplaintNotFound
+	}
+
+	// Check if user already liked this complaint
+	for _, likedBy := range complaint.Likes {
+		if likedBy == userID {
+			s.log.Debug("user already liked this complaint", slog.String("complaintId", complaintID), slog.String("userId", userID))
+			return nil // Already liked, do nothing
+		}
+	}
+
+	// Add user ID to likes array
+	complaint.Likes = append(complaint.Likes, userID)
+	complaint.LikeCount = len(complaint.Likes)
+
+	// Marshal the updated complaint
+	complaintBytes, err := json.Marshal(complaint)
+	if err != nil {
+		s.log.Error("failed to marshal updated complaint", slog.String("complaintId", complaintID), slog.String("error", err.Error()))
+		return err
+	}
+
+	// Replace the item using the partition key
+	partitionKey := azcosmos.NewPartitionKeyString(complaint.UserID)
+	_, err = containerClient.ReplaceItem(ctx, partitionKey, complaintID, complaintBytes, nil)
+	if err != nil {
+		s.log.Error("failed to like complaint in cosmos", slog.String("complaintId", complaintID), slog.String("userId", userID), slog.String("error", err.Error()))
+		return err
+	}
+
+	s.log.Info("complaint liked successfully", slog.String("complaintId", complaintID), slog.String("userId", userID), slog.Int("likeCount", complaint.LikeCount))
+	return nil
+}
+
+// UnlikeComplaint removes a user ID from the likes array of a complaint
+func (s *Service) UnlikeComplaint(ctx context.Context, complaintID, userID string) error {
+	containerClient, err := s.client.NewContainer(s.database, s.complaintsContainer)
+	if err != nil {
+		s.log.Error("failed to get complaints container", slog.String("error", err.Error()))
+		return err
+	}
+
+	// Get the complaint
+	complaint, err := s.GetComplaintByID(ctx, complaintID)
+	if err != nil {
+		s.log.Error("failed to get complaint for unliking", slog.String("complaintId", complaintID), slog.String("userId", userID), slog.String("error", err.Error()))
+		return err
+	}
+
+	if complaint == nil {
+		s.log.Debug("complaint not found for unliking", slog.String("complaintId", complaintID))
+		return ErrComplaintNotFound
+	}
+
+	// Find and remove user ID from likes array
+	found := false
+	newLikes := []string{}
+	for _, likedBy := range complaint.Likes {
+		if likedBy != userID {
+			newLikes = append(newLikes, likedBy)
+		} else {
+			found = true
+		}
+	}
+
+	if !found {
+		s.log.Debug("user did not like this complaint", slog.String("complaintId", complaintID), slog.String("userId", userID))
+		return nil // Not liked, do nothing
+	}
+
+	complaint.Likes = newLikes
+	complaint.LikeCount = len(complaint.Likes)
+
+	// Marshal the updated complaint
+	complaintBytes, err := json.Marshal(complaint)
+	if err != nil {
+		s.log.Error("failed to marshal updated complaint", slog.String("complaintId", complaintID), slog.String("error", err.Error()))
+		return err
+	}
+
+	// Replace the item using the partition key
+	partitionKey := azcosmos.NewPartitionKeyString(complaint.UserID)
+	_, err = containerClient.ReplaceItem(ctx, partitionKey, complaintID, complaintBytes, nil)
+	if err != nil {
+		s.log.Error("failed to unlike complaint in cosmos", slog.String("complaintId", complaintID), slog.String("userId", userID), slog.String("error", err.Error()))
+		return err
+	}
+
+	s.log.Info("complaint unliked successfully", slog.String("complaintId", complaintID), slog.String("userId", userID), slog.Int("likeCount", complaint.LikeCount))
 	return nil
 }

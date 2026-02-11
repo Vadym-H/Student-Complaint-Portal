@@ -125,13 +125,19 @@ func (h *ComplaintsHandler) GetComplaints(w http.ResponseWriter, r *http.Request
 
 	h.log.Info("complaints retrieved for user", slog.String("userId", userId), slog.String("status", status), slog.Int("count", len(complaints)))
 
+	// Convert to response DTOs with user-specific like information
+	responses := make([]models.ComplaintResponse, len(complaints))
+	for i, complaint := range complaints {
+		responses[i] = *cosmos.ToComplaintResponse(&complaint, userId)
+	}
+
 	// Return complaints as JSON
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Expires", "0")
 	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(complaints); err != nil {
+	if err := json.NewEncoder(w).Encode(responses); err != nil {
 		h.log.Error("failed to encode response", slog.String("userId", userId), slog.String("error", err.Error()))
 	}
 }
@@ -258,12 +264,18 @@ func (h *ComplaintsHandler) GetAllComplaintsAdmin(w http.ResponseWriter, r *http
 		return
 	}
 
+	// Convert to response DTOs with user-specific like information
+	responses := make([]models.ComplaintResponse, len(complaints))
+	for i, complaint := range complaints {
+		responses[i] = *cosmos.ToComplaintResponse(&complaint, adminId)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Expires", "0")
 	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(complaints); err != nil {
+	if err := json.NewEncoder(w).Encode(responses); err != nil {
 		h.log.Error("failed to encode response", slog.String("adminId", adminId), slog.String("error", err.Error()))
 	}
 }
@@ -347,6 +359,177 @@ func (h *ComplaintsHandler) DeleteComplaint(w http.ResponseWriter, r *http.Reque
 		"complaintId": complaintId,
 	}
 	if err := json.NewEncoder(w).Encode(response); err != nil {
+		h.log.Error("failed to encode response", slog.String("userId", userId), slog.String("complaintId", complaintId), slog.String("error", err.Error()))
+	}
+}
+
+// GetApprovedComplaints handles GET requests to retrieve all complaints with approved status
+// @Summary Get all approved complaints
+// @Description Get all complaints with approved status
+// @Tags complaints
+// @Security Bearer
+// @Produce json
+// @Success 200 {array} models.Complaint
+// @Failure 401 {string} string "Unauthorized"
+// @Failure 500 {string} string "Internal Server Error"
+// @Router /api/complaints/approved [get]
+func (h *ComplaintsHandler) GetApprovedComplaints(w http.ResponseWriter, r *http.Request) {
+	userId, ok := middleware.GetUserID(r.Context())
+	if !ok {
+		h.log.Error("failed to get userId from context", slog.String("path", r.URL.Path))
+		http.Error(w, "User ID not found in context", http.StatusInternalServerError)
+		return
+	}
+
+	h.log.Info("getting approved complaints", slog.String("userId", userId))
+
+	complaints, err := h.cosmosService.GetAllComplaints(r.Context(), models.StatusApproved)
+	if err != nil {
+		h.log.Error("failed to get approved complaints", slog.String("userId", userId), slog.String("error", err.Error()))
+		http.Error(w, "Failed to retrieve approved complaints", http.StatusInternalServerError)
+		return
+	}
+
+	// Convert to response DTOs with user-specific like information
+	responses := make([]models.ComplaintResponse, len(complaints))
+	for i, complaint := range complaints {
+		responses[i] = *cosmos.ToComplaintResponse(&complaint, userId)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(responses); err != nil {
+		h.log.Error("failed to encode response", slog.String("userId", userId), slog.String("error", err.Error()))
+	}
+}
+
+// LikeComplaint handles POST requests to like a complaint
+// @Summary Like a complaint
+// @Description Like a complaint by complaint ID
+// @Tags complaints
+// @Security Bearer
+// @Produce json
+// @Param id path string true "Complaint ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {string} string "Bad Request"
+// @Failure 401 {string} string "Unauthorized"
+// @Failure 404 {string} string "Complaint Not Found"
+// @Failure 500 {string} string "Internal Server Error"
+// @Router /api/complaints/{id}/like [post]
+func (h *ComplaintsHandler) LikeComplaint(w http.ResponseWriter, r *http.Request) {
+	// Get userId from context (set by auth middleware)
+	userId, ok := middleware.GetUserID(r.Context())
+	if !ok {
+		h.log.Error("failed to get userId from context", slog.String("path", r.URL.Path))
+		http.Error(w, "User ID not found in context", http.StatusInternalServerError)
+		return
+	}
+
+	// Get complaint ID from URL parameter
+	complaintId := r.PathValue("id")
+	if complaintId == "" {
+		h.log.Error("complaint id not provided in URL", slog.String("userId", userId))
+		http.Error(w, "Complaint ID required", http.StatusBadRequest)
+		return
+	}
+
+	// Like the complaint
+	if err := h.cosmosService.LikeComplaint(r.Context(), complaintId, userId); err != nil {
+		h.log.Error("failed to like complaint", slog.String("userId", userId), slog.String("complaintId", complaintId), slog.String("error", err.Error()))
+		http.Error(w, "Failed to like complaint", http.StatusInternalServerError)
+		return
+	}
+
+	// Get the updated complaint to return likes info
+	complaint, err := h.cosmosService.GetComplaintByID(r.Context(), complaintId)
+	if err != nil {
+		h.log.Error("failed to get complaint after liking", slog.String("userId", userId), slog.String("complaintId", complaintId), slog.String("error", err.Error()))
+		http.Error(w, "Failed to retrieve complaint", http.StatusInternalServerError)
+		return
+	}
+
+	if complaint == nil {
+		h.log.Debug("complaint not found after liking", slog.String("userId", userId), slog.String("complaintId", complaintId))
+		http.Error(w, "Complaint not found", http.StatusNotFound)
+		return
+	}
+
+	h.log.Info("complaint liked", slog.String("userId", userId), slog.String("complaintId", complaintId), slog.Int("likeCount", complaint.LikeCount))
+
+	// Convert to response DTO with user-specific like information
+	complaintResponse := cosmos.ToComplaintResponse(complaint, userId)
+
+	// Return success response with full complaint info
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(complaintResponse); err != nil {
+		h.log.Error("failed to encode response", slog.String("userId", userId), slog.String("complaintId", complaintId), slog.String("error", err.Error()))
+	}
+}
+
+// UnlikeComplaint handles DELETE requests to unlike a complaint
+// @Summary Unlike a complaint
+// @Description Unlike a complaint by complaint ID
+// @Tags complaints
+// @Security Bearer
+// @Produce json
+// @Param id path string true "Complaint ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {string} string "Bad Request"
+// @Failure 401 {string} string "Unauthorized"
+// @Failure 404 {string} string "Complaint Not Found"
+// @Failure 500 {string} string "Internal Server Error"
+// @Router /api/complaints/{id}/like [delete]
+func (h *ComplaintsHandler) UnlikeComplaint(w http.ResponseWriter, r *http.Request) {
+	// Get userId from context (set by auth middleware)
+	userId, ok := middleware.GetUserID(r.Context())
+	if !ok {
+		h.log.Error("failed to get userId from context", slog.String("path", r.URL.Path))
+		http.Error(w, "User ID not found in context", http.StatusInternalServerError)
+		return
+	}
+
+	// Get complaint ID from URL parameter
+	complaintId := r.PathValue("id")
+	if complaintId == "" {
+		h.log.Error("complaint id not provided in URL", slog.String("userId", userId))
+		http.Error(w, "Complaint ID required", http.StatusBadRequest)
+		return
+	}
+
+	// Unlike the complaint
+	if err := h.cosmosService.UnlikeComplaint(r.Context(), complaintId, userId); err != nil {
+		h.log.Error("failed to unlike complaint", slog.String("userId", userId), slog.String("complaintId", complaintId), slog.String("error", err.Error()))
+		http.Error(w, "Failed to unlike complaint", http.StatusInternalServerError)
+		return
+	}
+
+	// Get the updated complaint to return likes info
+	complaint, err := h.cosmosService.GetComplaintByID(r.Context(), complaintId)
+	if err != nil {
+		h.log.Error("failed to get complaint after unliking", slog.String("userId", userId), slog.String("complaintId", complaintId), slog.String("error", err.Error()))
+		http.Error(w, "Failed to retrieve complaint", http.StatusInternalServerError)
+		return
+	}
+
+	if complaint == nil {
+		h.log.Debug("complaint not found after unliking", slog.String("userId", userId), slog.String("complaintId", complaintId))
+		http.Error(w, "Complaint not found", http.StatusNotFound)
+		return
+	}
+
+	h.log.Info("complaint unliked", slog.String("userId", userId), slog.String("complaintId", complaintId), slog.Int("likeCount", complaint.LikeCount))
+
+	// Convert to response DTO with user-specific like information
+	complaintResponse := cosmos.ToComplaintResponse(complaint, userId)
+
+	// Return success response with full complaint info
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(complaintResponse); err != nil {
 		h.log.Error("failed to encode response", slog.String("userId", userId), slog.String("complaintId", complaintId), slog.String("error", err.Error()))
 	}
 }

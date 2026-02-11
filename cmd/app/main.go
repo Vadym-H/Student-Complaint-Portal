@@ -87,7 +87,10 @@ func main() {
 		// Complaint routes
 		r.Post("/api/complaints", complaintHandler.CreateComplaint)
 		r.Get("/api/complaints", complaintHandler.GetComplaints)
+		r.Get("/api/complaints/approved", complaintHandler.GetApprovedComplaints)
 		r.Delete("/api/complaints/{id}", complaintHandler.DeleteComplaint)
+		r.Post("/api/complaints/{id}/like", complaintHandler.LikeComplaint)
+		r.Delete("/api/complaints/{id}/like", complaintHandler.UnlikeComplaint)
 
 		// Admin-only routes
 		r.Group(func(r chi.Router) {
