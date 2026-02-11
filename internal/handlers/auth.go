@@ -106,7 +106,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		UserName:     req.UserName,
 		Name:         req.Name,
 		PasswordHash: string(hashedPassword),
-		Role:         "student",
+		Role:         "admin",
 		CreatedAt:    time.Now(),
 	}
 

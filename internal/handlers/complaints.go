@@ -138,7 +138,8 @@ func (h *ComplaintsHandler) GetComplaints(w http.ResponseWriter, r *http.Request
 
 // UpdateComplaintRequest represents the request body for updating a complaint
 type UpdateComplaintRequest struct {
-	Status string `json:"status"`
+	Status  string `json:"status"`
+	Comment string `json:"comment,omitempty"` // Optional comment from admin
 }
 
 // UpdateComplaint handles PUT requests to update a complaint (admin-only)
@@ -186,8 +187,8 @@ func (h *ComplaintsHandler) UpdateComplaint(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Update complaint status in Cosmos DB
-	if err := h.cosmosService.UpdateComplaintStatus(r.Context(), complaintId, req.Status); err != nil {
+	// Update complaint status and optionally add comment in Cosmos DB
+	if err := h.cosmosService.UpdateComplaintStatusWithComment(r.Context(), complaintId, req.Status, req.Comment, adminId); err != nil {
 		h.log.Error("failed to update complaint status", slog.String("adminId", adminId), slog.String("complaintId", complaintId), slog.String("error", err.Error()))
 		http.Error(w, "Failed to update complaint", http.StatusInternalServerError)
 		return

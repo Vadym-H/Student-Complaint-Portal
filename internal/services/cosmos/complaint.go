@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/data/azcosmos"
 	"github.com/Vadym-H/Student-Complaint-Portal/internal/models"
@@ -154,6 +155,92 @@ func (s *Service) UpdateComplaintStatus(ctx context.Context, id, status string) 
 	}
 
 	s.log.Info("complaint status updated", slog.String("complaintId", id), slog.String("oldStatus", oldStatus), slog.String("newStatus", status))
+	return nil
+}
+
+// UpdateComplaintStatusWithComment updates the status of a complaint and optionally adds a comment from an admin
+func (s *Service) UpdateComplaintStatusWithComment(ctx context.Context, id, status, comment, adminID string) error {
+	containerClient, err := s.client.NewContainer(s.database, s.complaintsContainer)
+	if err != nil {
+		s.log.Error("failed to get complaints container", slog.String("error", err.Error()))
+		return err
+	}
+
+	// First, find the complaint to get the partition key (userId)
+	query := "SELECT * FROM c WHERE c.id = @id"
+	queryOptions := &azcosmos.QueryOptions{
+		QueryParameters: []azcosmos.QueryParameter{
+			{Name: "@id", Value: id},
+		},
+	}
+
+	pager := containerClient.NewQueryItemsPager(query, azcosmos.PartitionKey{}, queryOptions)
+
+	var complaint *models.Complaint
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			s.log.Error("failed to query complaint for update", slog.String("complaintId", id), slog.String("error", err.Error()))
+			return err
+		}
+
+		for _, item := range page.Items {
+			var c models.Complaint
+			if err := json.Unmarshal(item, &c); err != nil {
+				s.log.Error("failed to unmarshal complaint", slog.String("complaintId", id), slog.String("error", err.Error()))
+				return err
+			}
+			complaint = &c
+			break
+		}
+		if complaint != nil {
+			break
+		}
+	}
+
+	if complaint == nil {
+		s.log.Debug("complaint not found for update", slog.String("complaintId", id))
+		return nil // complaint not found
+	}
+
+	// Update the status
+	oldStatus := complaint.Status
+	complaint.Status = status
+
+	// Add comment if provided
+	if comment != "" {
+		if complaint.Comments == nil {
+			complaint.Comments = []models.Comment{}
+		}
+		newComment := models.Comment{
+			ID:        uuid.New().String(),
+			AdminID:   adminID,
+			Content:   comment,
+			CreatedAt: time.Now(),
+		}
+		complaint.Comments = append(complaint.Comments, newComment)
+	}
+
+	// Marshal the updated complaint
+	complaintBytes, err := json.Marshal(complaint)
+	if err != nil {
+		s.log.Error("failed to marshal updated complaint", slog.String("complaintId", id), slog.String("error", err.Error()))
+		return err
+	}
+
+	// Replace the item using the partition key
+	partitionKey := azcosmos.NewPartitionKeyString(complaint.UserID)
+	_, err = containerClient.ReplaceItem(ctx, partitionKey, id, complaintBytes, nil)
+	if err != nil {
+		s.log.Error("failed to update complaint status in cosmos", slog.String("complaintId", id), slog.String("error", err.Error()))
+		return err
+	}
+
+	if comment != "" {
+		s.log.Info("complaint status updated with comment", slog.String("complaintId", id), slog.String("oldStatus", oldStatus), slog.String("newStatus", status), slog.String("adminId", adminID))
+	} else {
+		s.log.Info("complaint status updated", slog.String("complaintId", id), slog.String("oldStatus", oldStatus), slog.String("newStatus", status))
+	}
 	return nil
 }
 
